@@ -1,0 +1,63 @@
+body {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background-color: #f0f0f0;
+    font-family: Arial, sans-serif;
+}
+
+#gameContainer {
+    position: relative;
+    width: 800px;
+    height: 600px;
+    border: 2px solid #333;
+    overflow: hidden;
+}
+
+#gameCanvas {
+    background-color: #87CEEB;
+}
+
+#codeInput {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    width: 780px;
+}
+
+#output {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background-color: rgba(255, 255, 255, 0.7);
+    padding: 5px;
+}
+
+#memoryVisualization {
+    position: absolute;
+    bottom: 40px;
+    left: 10px;
+    width: 780px;
+    height: 30px;
+    background-color: rgba(255, 255, 255, 0.7);
+}
+
+#levelInfo {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: rgba(255, 255, 255, 0.7);
+    padding: 5px;
+}
+
+#suggestion {
+    position: absolute;
+    bottom: 80px;
+    left: 10px;
+    width: 780px;
+    background-color: rgba(255, 255, 255, 0.7);
+    padding: 5px;
+}
