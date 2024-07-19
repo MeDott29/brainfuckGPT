@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BrainfuckGPT Adventure</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        #gameContainer {
+            position: relative;
+            width: 800px;
+            height: 400px;
+            border: 2px solid #333;
+            overflow: hidden;
+        }
+        #gameCanvas {
+            background-color: #87CEEB;
+        }
+        #output {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(255, 255, 255, 0.7);
+            padding: 5px;
+        }
+        #codeDisplay {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background-color: rgba(255, 255, 255, 0.7);
+            padding: 5px;
+        }
+        #memoryVisualization {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(255, 255, 255, 0.7);
+            padding: 5px;
+            display: flex;
+            flex-direction: row;
+            gap: 2px;
+        }
+        .memory-cell {
+            width: 20px;
+            height: 20px;
+            border: 1px solid #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 12px;
+        }
+        .memory-cell.active {
+            background-color: #ffff00;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+        <div id="output"></div>
+        <div id="codeDisplay"></div>
+        <div id="memoryVisualization"></div>
+    </div>
+
+    <script>
+        // Wait for TensorFlow.js to load
+        window.onload = () => {
+            if (typeof tf === 'undefined') {
+                console.error('TensorFlow.js failed to load');
+                return;
+            }
+
+            // BrainfuckGPT implementation
+            const BF_VOCAB = [">", "<", "+", "-", ".", ",", "[", "]"];
+            const VOCAB_SIZE = BF_VOCAB.length;
+            const CONTEXT_LENGTH = 16;
+
+            class BrainfuckGPT {
+                constructor(embedSize = 64, numHeads = 4, numLayers = 4) {
+                    this.embedSize = embedSize;
+                    this.numHeads = numHeads;
+                    this.numLayers = numLayers;
+                    this.model = this.buildModel();
+                }
+
+                buildModel() {
+                    const input = tf.input({shape: [CONTEXT_LENGTH]});
+                    
+                    let x = tf.layers.embedding({
+                        inputDim: VOCAB_SIZE,
+                        outputDim: this.embedSize,
+                        inputLength: CONTEXT_LENGTH
+                    }).apply(input);
+
+                    const positionEncoding = this.getPositionEncoding(CONTEXT_LENGTH, this.embedSize);
+                    x = tf.add(x, positionEncoding);
+
+                    for (let i = 0; i < this.numLayers; i++) {
+                        x = this.transformerBlock(x);
+                    }
+
+                    const output = tf.layers.dense({units: VOCAB_SIZE}).apply(x);
+
+                    return tf.model({inputs: input, outputs: output});
+                }
+
+                transformerBlock(x) {
+                    const attn = this.multiHeadAttention(x, x, x);
+                    const out1 = tf.layers.layerNormalization().apply(tf.add(x, attn));
+                    const ffn = this.feedForwardNetwork(out1);
+                    return tf.layers.layerNormalization().apply(tf.add(out1, ffn));
+                }
+
+                multiHeadAttention(q, k, v) {
+                    const multiHead = tf.layers.multiHeadAttention({
+                        numHeads: this.numHeads,
+                        keyDim: this.embedSize / this.numHeads
+                    });
+                    return multiHead.apply([q, k, v]);
+                }
+
+                feedForwardNetwork(x) {
+                    const hidden = tf.layers.dense({
+                        units: this.embedSize * 4,
+                        activation: 'relu'
+                    }).apply(x);
+                    return tf.layers.dense({units: this.embedSize}).apply(hidden);
+                }
+
+                getPositionEncoding(maxLen, dModel) {
+                    const positionEncoding = new Array(maxLen).fill(0).map((_, pos) => {
+                        return new Array(dModel).fill(0).map((_, i) => {
+                            if (i % 2 === 0) {
+                                return Math.sin(pos / Math.pow(10000, i / dModel));
+                            } else {
+                                return Math.cos(pos / Math.pow(10000, (i - 1) / dModel));
+                            }
+                        });
+                    });
+                    return tf.tensor(positionEncoding);
+                }
+
+                async train(dataset, epochs = 10, batchSize = 32) {
+                    const optimizer = tf.train.adam();
+                    this.model.compile({
+                        optimizer: optimizer,
+                        loss: 'categoricalCrossentropy',
+                        metrics: ['accuracy']
+                    });
+
+                    const history = await this.model.fit(dataset.xs, dataset.ys, {
+                        epochs: epochs,
+                        batchSize: batchSize,
+                        callbacks: tf.callbacks.earlyStopping({monitor: 'val_loss', patience: 3})
+                    });
+
+                    return history;
+                }
+
+                async generate(startSequence, numSteps = 5) {
+                    let currentSequence = startSequence.padStart(CONTEXT_LENGTH, BF_VOCAB[0]);
+                    
+                    for (let i = 0; i < numSteps; i++) {
+                        const input = tf.tensor2d([currentSequence.split('').map(char => BF_VOCAB.indexOf(char))]);
+                        const prediction = this.model.predict(input);
+                        const nextTokenIndex = tf.argMax(prediction.slice([0, prediction.shape[1] - 1]), 1).dataSync()[0];
+                        currentSequence = currentSequence.slice(1) + BF_VOCAB[nextTokenIndex];
+                    }
+
+                    return currentSequence.slice(-numSteps);
+                }
+            }
+
+            function createDataset(brainfuckCode, sequenceLength = CONTEXT_LENGTH) {
+                const xs = [];
+                const ys = [];
+
+                for (let i = 0; i < brainfuckCode.length - sequenceLength; i++) {
+                    const sequence = brainfuckCode.slice(i, i + sequenceLength);
+                    const nextChar = brainfuckCode[i + sequenceLength];
+
+                    xs.push(sequence.split('').map(char => BF_VOCAB.indexOf(char)));
+                    ys.push(BF_VOCAB.indexOf(nextChar));
+                }
+
+                return {
+                    xs: tf.tensor2d(xs),
+                    ys: tf.oneHot(tf.tensor1d(ys, 'int32'), VOCAB_SIZE)
+                };
+            }
+
+            // Brainfuck Interpreter
+            class BrainfuckInterpreter {
+                constructor(memorySize = 30000) {
+                    this.memory = new Array(memorySize).fill(0);
+                    this.pointer = 0;
+                    this.output = "";
+                }
+
+                interpret(code) {
+                    let i = 0;
+                    const codeLength = code.length;
+                    const loopStack = [];
+
+                    while (i < codeLength) {
+                        switch (code[i]) {
+                            case '>':
+                                this.pointer = (this.pointer + 1) % this.memory.length;
+                                break;
+                            case '<':
+                                this.pointer = (this.pointer - 1 + this.memory.length) % this.memory.length;
+                                break;
+                            case '+':
+                                this.memory[this.pointer] = (this.memory[this.pointer] + 1) % 256;
+                                break;
+                            case '-':
+                                this.memory[this.pointer] = (this.memory[this.pointer] - 1 + 256) % 256;
+                                break;
+                            case '.':
+                                this.output += String.fromCharCode(this.memory[this.pointer]);
+                                break;
+                            case ',':
+                                // Input is not implemented in this version
+                                break;
+                            case '[':
+                                if (this.memory[this.pointer] === 0) {
+                                    let loopCount = 1;
+                                    while (loopCount > 0) {
+                                        i++;
+                                        if (code[i] === '[') loopCount++;
+                                        if (code[i] === ']') loopCount--;
+                                    }
+                                } else {
+                                    loopStack.push(i);
+                                }
+                                break;
+                            case ']':
+                                if (this.memory[this.pointer] !== 0) {
+                                    i = loopStack[loopStack.length - 1];
+                                } else {
+                                    loopStack.pop();
+                                }
+                                break;
+                        }
+                        i++;
+                        updateMemoryVisualization(this.memory, this.pointer);
+                    }
+
+                    return this.output;
+                }
+            }
+
+            // Game Implementation
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const output = document.getElementById('output');
+            const codeDisplay = document.getElementById('codeDisplay');
+            const memoryVisualization = document.getElementById('memoryVisualization');
+
+            const player = {
+                x: 50,
+                y: 200,
+                width: 30,
+                height: 30,
+                speed: 5
+            };
+
+            const platforms = [
+                { x: 0, y: 350, width: 800, height: 50 },
+                { x: 300, y: 250, width: 200, height: 20 },
+                { x: 600, y: 150, width: 150, height: 20 }
+            ];
+
+            const tokens = [
+                { x: 200, y: 300, command: '>' },
+                { x: 400, y: 200, command: '<' },
+                { x: 700, y: 100, command: '+' },
+                { x: 500, y: 300, command: '-' },
+                { x: 100, y: 300, command: '.' },
+                { x: 300, y: 200, command: ',' },
+                { x: 600, y: 100, command: '[' },
+                { x: 750, y: 300, command: ']' }
+            ];
+
+            let cameraX = 0;
+            const keys = {};
+            let brainfuckCode = "";
+            let generatedCode = "";
+            const brainfuckGPT = new BrainfuckGPT();
+            const interpreter = new BrainfuckInterpreter();
+
+            function drawPlayer() {
+                ctx.fillStyle = 'red';
+                ctx.fillRect(player.x - cameraX, player.y, player.width, player.height);
+            }
+
+            function drawPlatforms() {
+                ctx.fillStyle = 'green';
+                platforms.forEach(platform => {
+                    ctx.fillRect(platform.x - cameraX, platform.y, platform.width, platform.height);
+                });
+            }
+
+            function drawTokens() {
+                ctx.fillStyle = 'blue';
+                ctx.font = '20px Arial';
+                tokens.forEach(token => {
+                    if (token.collected) return;
+                    ctx.fillText(token.command, token.x - cameraX, token.y);
+                });
+            }
+
+            function drawCode() {
+                ctx.fillStyle = 'black';
+                ctx.font = '14px monospace';
+                ctx.fillText(generatedCode, 10, 30);
+            }
+
+            function update() {
+                if (keys['KeyW'] && player.onGround) {
+                    player.yVelocity = -10;
+                    player.onGround = false;
+                }
+                if (keys['KeyA']) player.x -= player.speed;
+                if (keys['KeyD']) player.x += player.speed;
+
+                player.yVelocity = (player.yVelocity || 0) + 0.5; // Gravity
+                player.y += player.yVelocity;
+
+                player.onGround = false;
+                platforms.forEach(platform => {
+                    if (player.x < platform.x + platform.width &&
+                        player.x + player.width > platform.x &&
+                        player.y + player.height > platform.y &&
+                        player.y < platform.y + platform.height) {
+                        if (player.yVelocity > 0) {
+                            player.onGround = true;
+                            player.y = platform.y - player.height;
+                            player.yVelocity = 0;
+                        }
+                    }
+                });
+
+                // Collect tokens
+                tokens.forEach(token => {
+                    if (!token.collected &&
+                        player.x < token.x + 20 &&
+                        player.x + player.width > token.x &&
+                        player.y < token.y + 20 &&
+                        player.y + player.height > token.y) {
+                        token.collected = true;
+                        brainfuckCode += token.command;
+                        codeDisplay.textContent = `Collected code: ${brainfuckCode}`;
+                        
+                        // Train model and generate code when 8 tokens are collected
+                        if (brainfuckCode.length % 8 === 0) {
+                            trainAndGenerate();
+                        }
+                    }
+                });
+
+                cameraX = player.x - 400;
+                if (cameraX < 0) cameraX = 0;
+            }
+
+            function draw() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawPlatforms();
+                drawPlayer();
+                drawTokens();
+                drawCode();
+            }
+
+            function gameLoop() {
+                update();
+                draw();
+                requestAnimationFrame(gameLoop);
+            }
+
+            document.addEventListener('keydown', (e) => {
+                keys[e.code] = true;
+            });
+
+            document.addEventListener('keyup', (e) => {
+                keys[e.code] = false;
+            });
+
+            async function trainAndGenerate() {
+                const dataset = createDataset(brainfuckCode);
+                await brainfuckGPT.train(dataset);
+                generatedCode = await brainfuckGPT.generate(brainfuckCode[0], 10);
+                const result = interpreter.interpret(generatedCode);
+                output.textContent = `Generated: ${generatedCode}, Output: ${result}`;
+                applyCodeEffect(result);
+            }
+
+            function applyCodeEffect(result) {
+                const effects = {
+                    'j': () => player.yVelocity = -15, // Super jump
+                    'f': () => player.speed = 10,     // Speed boost
+                    's': () => player.speed = 2,      // Slow down
+                    'g': () => player.y = 350,        // Fall to ground
+                    't': () => player.x += 100        // Teleport forward
+                };
+
+                for (let char of result) {
+                    if (effects[char]) {
+                        effects[char]();
+                    }
+                }
+            }
+
+            function updateMemoryVisualization(memory, pointer) {
+                memoryVisualization.innerHTML = '';
+                for (let i = 0; i < 10; i++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'memory-cell';
+                    if (i === pointer) {
+                        cell.classList.add('active');
+                    }
+                    cell.textContent = memory[i];
+                    memoryVisualization.appendChild(cell);
+                }
+            }
+
+            // Initial setup
+            updateMemoryVisualization(interpreter.memory, interpreter.pointer);
+            gameLoop();
+        };
+    </script>
+</body>
+</html>
