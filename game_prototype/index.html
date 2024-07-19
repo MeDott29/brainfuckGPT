@@ -3,22 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BrainfuckGPT Puzzle Platformer</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+    <title>BrainfuckGPT Game</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
 </head>
 <body>
     <div id="gameContainer">
-        <canvas id="gameCanvas" width="800" height="500"></canvas>
-        <div id="memoryVisualization"></div>
-        <input type="text" id="codeInput" placeholder="Enter Brainfuck code here">
-        <div id="output"></div>
-        <div id="levelInfo"></div>
-        <div id="suggestion"></div>
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="gameInfo">
+            <div id="levelInfo"></div>
+            <div id="score"></div>
+            <div id="aiStatus">AI: Not Ready</div>
+        </div>
     </div>
-
-    <script src="brainfuckGPT.js"></script>
+    <div id="aiContainer">
+        <h3>Generated Brainfuck Code:</h3>
+        <pre id="generatedCode"></pre>
+        <h3>Generation Log:</h3>
+        <div id="generationLog"></div>
+    </div>
     <script src="brainfuckInterpreter.js"></script>
+    <script src="brainfuckGPT.js"></script>
+    <script src="gameLogic.js"></script>
+    <script src="gameRenderer.js"></script>
+    <script src="fileReader.js"></script>
     <script src="game.js"></script>
 </body>
 </html>
